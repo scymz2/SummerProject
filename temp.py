@@ -9,6 +9,9 @@
 
 import numpy as np
 random = np.random.RandomState(0)#RandomState生成随机数种子
-for i in range(200):#随机数个数
-    a = random.uniform(-0.1, 0.1)#随机数范围
-    print round(a, 2)#随机数精度要求
+positions = []
+for i in range(50):#随机数个数
+    a = round(random.uniform(121.559946, 121.565753),6)#随机数范围
+    b = round(random.uniform(29.797355,29.802640),6)
+    positions.append([a,b])
+

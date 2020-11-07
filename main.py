@@ -4,10 +4,7 @@
 @author:nicolasjam
 @file:main.py
 @time:2020/11/06
-"""
-import math
 
-"""
 任务简介
 由于anylogic里面添加函数实在是太麻烦了，所以我人工将预设点坐标以及各种数据转出在这个程序里面计算
 我需要什么
@@ -18,79 +15,183 @@ import math
 5.我需要得出的结果，用这三种方法分别计算出的飞行距离，计算耗时
 """
 
+import math
+import random
 import datetime
-import time
+import numpy as np
 
 EARTH_REDIUS = 6378.137
 pi = 3.1415926
-
-#散装函数先放在这边
-curr_time1 = datetime.datetime.now()
-curr_time2 = datetime.datetime.now()
-print(curr_time2-curr_time1)
-
-def GCJ2WGS(location):
- # location格式如下：locations[1] = "113.923745,22.530824"
-     lon = float(location[0:location.find(",")])
-     lat = float(location[location.find(",") + 1:len(location)])
-     a = 6378245.0 # 克拉索夫斯基椭球参数长半轴a
-     ee = 0.00669342162296594323 #克拉索夫斯基椭球参数第一偏心率平方
-     PI = 3.14159265358979324 # 圆周率
-     # 以下为转换公式
-     x = lon - 105.0
-     y = lat - 35.0
-     # 经度
-     dLon = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * math.sqrt(abs(x));
-     dLon += (20.0 * math.sin(6.0 * x * PI) + 20.0 * math.sin(2.0 * x * PI)) * 2.0 / 3.0;
-     dLon += (20.0 * math.sin(x * PI) + 40.0 * math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
-     dLon += (150.0 * math.sin(x / 12.0 * PI) + 300.0 * math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
-     #纬度
-     dLat = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * math.sqrt(abs(x));
-     dLat += (20.0 * math.sin(6.0 * x * PI) + 20.0 * math.sin(2.0 * x * PI)) * 2.0 / 3.0;
-     dLat += (20.0 * math.sin(y * PI) + 40.0 * math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
-     dLat += (160.0 * math.sin(y / 12.0 * PI) + 320 * math.sin(y * PI / 30.0)) * 2.0 / 3.0;
-     radLat = lat / 180.0 * PI
-     magic = math.sin(radLat)
-     magic = 1 - ee * magic * magic
-     sqrtMagic = math.sqrt(magic)
-     dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI);
-     dLon = (dLon * 180.0) / (a / sqrtMagic * math.cos(radLat) * PI);
-     wgsLon = lon - dLon
-     wgsLat = lat - dLat
-     return wgsLon,wgsLat
-
+START_POINT = [29.801243, 121.562457]
+STATIONS = [[121.563133, 29.801135], [121.563446, 29.800235], [121.562406, 29.800769], [121.562487, 29.802068], [121.565542, 29.799381], [121.564544, 29.80015], [121.563245, 29.802247], [121.560359, 29.797815], [121.560063, 29.801755], [121.564465, 29.801953], [121.565629, 29.801579], [121.562626, 29.80148], [121.560633, 29.800737], [121.560778, 29.802348], [121.562976, 29.799546], [121.561482, 29.801447], [121.562595, 29.800359], [121.560055, 29.800619], [121.5635, 29.800615], [121.565426, 29.800958], [121.562034, 29.799665], [121.563997, 29.797673], [121.563818, 29.800899], [121.561168, 29.798036], [121.561778, 29.799277], [121.563257, 29.799673], [121.565685, 29.797894], [121.561159, 29.798208], [121.563739, 29.798694], [121.562654, 29.798647], [121.560869, 29.797938], [121.563757, 29.798085], [121.561088, 29.799304], [121.564714, 29.797868], [121.564812, 29.797863], [121.565616, 29.799832], [121.565618, 29.800552], [121.564239, 29.797562], [121.561588, 29.79799], [121.561666, 29.797982], [121.561793, 29.799544], [121.560319, 29.801015], [121.563236, 29.798758], [121.562985, 29.797851], [121.563291, 29.802266], [121.561796, 29.800882], [121.560711, 29.801141], [121.561627, 29.798323], [121.563352, 29.797461], [121.56476, 29.79738]]
 
 
 class LocalClosestFirst:
-    #
+    def __init__(self,start,stations):
+        """
+        :param start: 起始点
+        :param stations: 基站坐标
+        """
+        assert len(start) > 1, "没有设定起始点"
+        assert len(stations) > 1, "基站数量太少"
+        self.start = start
+        self.stations = stations
+        self.cur = start
+        self.visited = np.zeros((len(stations),), dtype=int)
+
+
+    def LCF(self):
+        """
+        lcf核心算法，从起始点开始找最近点,找到当前最近点就标记一下，然后找下一个，直到没有了就回到起点
+        """
+        path = []
+        total_distance = 0
+
+        #print("test")
+        #print(self.stations)
+
+        for i in range(len(self.stations)):
+            shortest, closest = self._lcf(self.cur)     #找到
+            total_distance += shortest      #计算总长
+            path.append(closest)    #将新找到的点加入path中
+
+        #print(path)
+        return path
+
+    def _lcf(self, cur):
+        """
+        这个函数找距离当前点最近的未被访问过的点
+        """
+        shortest = 999999999
+        closest = -1
+        for i in range(len(self.stations)):
+            if(self.visited[i] == 0):
+
+                if(getDistance(cur,self.stations[i]) < shortest):
+                    closest = i
+                    shortest = getDistance(cur, self.stations[i])
+
+        self.visited[closest] = 1
+        self.cur = self.stations[closest]
+        return shortest, closest
+
 
 class SimulatedAnnealing:
 
     #构造方法
-    def __init__(self,lat,lng):
-        assert lat.length >= 1 & lng.length >= 1, "坐标数量必须大于1"
-        self.lat = lat
-        self.lng = lng
+    def __init__(self,start,stations,lcf_path):
+        assert len(start) > 1, "没有设定起始点"
+        assert len(stations) > 1, "基站数量太少"
+
+        self.start = start
+        self.stations = stations
+        self.lcf_path = lcf_path
         # 以_开头为私有变量,这边的参数主要为
         self._SA_TS = 500 #起始温度
-        self._SA_TF = 1; #结束温度
+        self._SA_TF = 1  #结束温度
         self._SA_BETA = 0.00000001
         self._SA_MAX_ITER = 200000000
+        self._SA_MAX_TIME = 60
         self._SA_ITER_PER_T = 1
-        self._time_spent = 0
 
-    def
 
+    #SA主函数
+    def run_SA(self):
+        iter = 0
+        time_spend = 0
+        temperature = self._SA_TS
+        cur_path = self.lcf_path
+        curr_time1 = datetime.datetime.now()
+
+        while (iter < self._SA_MAX_ITER) & (time_spend < self._SA_MAX_TIME) & (temperature > self._SA_TF):
+            #随机取两个不同的station进行交换
+            item = get2RandomInt(0,49)
+            print("cur path1:")
+            print(cur_path)
+            print(item[0])
+            new_path = self.swap(item[0], item[1], cur_path)
+            print("new path:")
+            print(new_path)
+            print("cur path:")
+            print(cur_path)
+            print("iter: " + str(iter))
+            #计算delta,即交换前后的差值
+            delta = self.getTotalDistance(cur_path) - self.getTotalDistance(new_path)
+            print("delta: " + str(delta))
+            print("math.exp(delta/temperature): " + str(math.exp(delta/temperature)))
+            #模拟退火，熵值概率交换
+            if (delta > 0) | (delta < 0 & (math.exp(delta/temperature) > random.uniform(0,1))):
+                cur_path = new_path
+                if(iter%100 ==0):
+                    print("temperature: " + str(temperature) + "best obj: " + str(self.getTotalDistance(cur_path)))
+
+            temperature = temperature/(1+self._SA_BETA*temperature)
+            curr_time2 = datetime.datetime.now()
+            time_spend = (curr_time2-curr_time1).seconds
+            iter += 1
+
+    #交换节点
+    def swap(self,item1, item2, path):
+        # 黑科技，一次赋值两个变量
+        path[item1], path[item2] = path[item2], path[item1]
+        return path
+
+
+
+    #获取当前路径总长度
+    def getTotalDistance(self, path):
+        distance = 0
+        #计算起始点到第一个基站和最后一个基站返回起始点的距离
+        start2first = getDistance(self.start, self.stations[path[0]])
+        last2end = getDistance(self.stations[path[0]], self.start)
+
+        for i in range(49):
+            dis = getDistance(self.stations[path[i]], self.stations[path[i+1]])
+            distance += dis
+
+        distance += (start2first + last2end)
+        return distance
+
+"""
+这些是散装函数，大家共享
+rad()
+getDistance()
+get2RandomInt()
+"""
 
 def rad(d):
     return d * pi / 180.0
 
-def getDistance(lat1, lng1, lat2, lng2):
+def getDistance(position1, position2):
+    lat1 = position1[0]
+    lng1 = position1[1]
+    lat2 = position2[0]
+    lng2 = position2[1]
     radLat1 = rad(lat1)
     radLat2 = rad(lat2)
     a = radLat1 - radLat2
     b = rad(lng1) - rad(lng2)
-    s = 2 * math.asin(math.sqrt(math.pow(math.sin(a / 2), 2) + math.cos(radLat1) * math.cos(radLat2) * math.pow(math.sin(b / 2), 2)))
+    s = 2 * math.asin(math.sqrt(
+    math.pow(math.sin(a / 2), 2) + math.cos(radLat1) * math.cos(radLat2) * math.pow(math.sin(b / 2), 2)))
     s = s * EARTH_REDIUS
     return s
+
+def get2RandomInt(bottom,top):
+    s = []
+    while (len(s) < 2):
+        x = random.randint(bottom, top)
+        if x not in s:
+            s.append(x)
+    return s
+
+
+if __name__ == "__main__":
+
+    lcf = LocalClosestFirst(START_POINT, STATIONS)
+    lcf_path = lcf.LCF()
+    #print(lcf_path)
+    sa = SimulatedAnnealing(START_POINT, STATIONS, lcf_path)
+    sa.run_SA()
+
+
 
