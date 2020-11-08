@@ -11,8 +11,14 @@
 1.一个可以计算GPS坐标系距离的函数
 2.一个SA算法
 3.一个closest first算法
-4.还需要一个RL训练模型（尽量找现成的）
-5.我需要得出的结果，用这三种方法分别计算出的飞行距离，计算耗时
+4. 现在因为RL做不出来，所以我想了另一个办法，将电池电量因素考虑进来，比如多少距离耗费多少电量，当
+无人机到达一个新节点的时候就判断无人机的电量是否到达了预设危险值，是否还支持到下一个站点，或者需要立即返回来更换电池
+需要的参数：
+    电池百分比 battery level: 100%
+    电池消耗效率：battery consume level: 0.1
+    (可选)悬停电池消耗效率：
+5.最后我们以时间来衡量效率
+    影响时间的因素： 更换电池的时间，每个站点收集数据的停留时间，飞回起点以及起点飞下一个点的所需时间，其余飞行时间用路程/飞机速度计算
 """
 
 import math
@@ -23,6 +29,9 @@ import numpy as np
 
 EARTH_REDIUS = 6378137
 pi = 3.1415926
+VELOCITY = 10 # m/s
+TIME_FOR_BATTERY_CHANEG = 300 # s
+BATTERY_CONSUME = 0.67
 START_POINT = [29.801243, 121.562457]
 STATIONS = [[29.801135, 121.563133], [29.800235, 121.563446], [29.800769, 121.562406], [29.802068, 121.562487], [29.799381, 121.565542], [29.80015, 121.564544], [29.802247, 121.563245], [29.797815, 121.560359], [29.801755, 121.560063], [29.801953, 121.564465], [29.801579, 121.565629], [29.80148, 121.562626], [29.800737, 121.560633], [29.802348, 121.560778], [29.799546, 121.562976], [29.801447, 121.561482], [29.800359, 121.562595], [29.800619, 121.560055], [29.800615, 121.5635], [29.800958, 121.565426], [29.799665, 121.562034], [29.797673, 121.563997], [29.800899, 121.563818], [29.798036, 121.561168], [29.799277, 121.561778], [29.799673, 121.563257], [29.797894, 121.565685], [29.798208, 121.561159], [29.798694, 121.563739], [29.798647, 121.562654], [29.797938, 121.560869], [29.798085, 121.563757], [29.799304, 121.561088], [29.797868, 121.564714], [29.797863, 121.564812], [29.799832, 121.565616], [29.800552, 121.565618], [29.797562, 121.564239], [29.79799, 121.561588], [29.797982, 121.561666], [29.799544, 121.561793], [29.801015, 121.560319], [29.798758, 121.563236], [29.797851, 121.562985], [29.802266, 121.563291], [29.800882, 121.561796], [29.801141, 121.560711], [29.798323, 121.561627], [29.797461, 121.563352], [29.79738, 121.56476]]
 
@@ -39,6 +48,10 @@ class LocalClosestFirst:
         self.stations = stations
         self.cur = start
         self.visited = np.zeros((len(stations),), dtype=int)
+        #电池变量
+        self.Battery_level = 100
+        self.Battery_low = 20
+        self.Flight_time = 0
 
 
     def LCF(self):
@@ -46,18 +59,36 @@ class LocalClosestFirst:
         lcf核心算法，从起始点开始找最近点,找到当前最近点就标记一下，然后找下一个，直到没有了就回到起点
         """
         path = []
-        total_distance = 0
+        total_time = 0
 
-        #print("test")
-        #print(self.stations)
+        # print("test")
+        # print(self.stations)
 
         for i in range(len(self.stations)):
-            shortest, closest = self._lcf(self.cur)     #找到
-            total_distance += shortest      #计算总长
-            path.append(closest)    #将新找到的点加入path中
+            shortest, closest = self._lcf(self.cur)    #找到
+            segment_time = shortest/VELOCITY           #计算片段时间
+            predict_battery = self.Battery_level - (segment_time * BATTERY_CONSUME) #计算估计剩余消耗电量
+            #如果电量即将跌出安全范围就立即返回
+            if(predict_battery <= self.Battery_low):
+                #记录返回以及前往下一个点的所需时间
+                time_back = getDistance(self.start, self.cur) / VELOCITY
+                time_next = getDistance(self.start, self.stations[closest])
+                total_time += (time_back + time_next + TIME_FOR_BATTERY_CHANEG)
+                #充电
+                self.Battery_level = 100
+            else:
+                #记录前往下一个点的所需时间
+                total_time += segment_time
+                self.Battery_level = predict_battery
 
-        #print(path)
-        return path
+            #标记经过点
+            self.visited[closest] = 1
+            self.cur = self.stations[closest]
+
+            path.append(closest)        #将新找到的点加入path中
+
+        # print(path)
+        return total_time
 
     def _lcf(self, cur):
         """
@@ -67,34 +98,19 @@ class LocalClosestFirst:
         closest = -1
         for i in range(len(self.stations)):
             if(self.visited[i] == 0):
-
-                if(getDistance(cur,self.stations[i]) < shortest):
+                if(getDistance(cur, self.stations[i]) < shortest):
                     closest = i
                     shortest = getDistance(cur, self.stations[i])
 
-        self.visited[closest] = 1
-        self.cur = self.stations[closest]
         return shortest, closest
 
-        # 获取当前路径总长度
-    def getTotalDistance(self, path):
-        distance = 0
-        # 计算起始点到第一个基站和最后一个基站返回起始点的距离
-        start2first = getDistance(self.start, self.stations[path[0]])
-        last2end = getDistance(self.stations[path[0]], self.start)
 
-        for i in range(49):
-            dis = getDistance(self.stations[path[i]], self.stations[path[i + 1]])
-            distance += dis
-
-        distance += (start2first + last2end)
-        return distance
 
 
 class SimulatedAnnealing:
 
     #构造方法
-    def __init__(self,start,stations,lcf_path):
+    def __init__(self, start, stations, lcf_path):
         assert len(start) > 1, "没有设定起始点"
         assert len(stations) > 1, "基站数量太少"
 
@@ -137,6 +153,8 @@ class SimulatedAnnealing:
             curr_time2 = datetime.datetime.now()
             time_spend = (curr_time2-curr_time1).seconds
             iter += 1
+
+        return self.getTotalDistance(cur_path)
 
     #交换节点
     def swapNode(self, item1, item2, path):
@@ -197,11 +215,17 @@ def get2RandomInt(bottom,top):
 
 if __name__ == "__main__":
 
+    distance = []
+
     lcf = LocalClosestFirst(START_POINT, STATIONS)
     lcf_path = lcf.LCF()
+
     #print(lcf_path)
+
     sa = SimulatedAnnealing(START_POINT, STATIONS, lcf_path)
-    sa.run_SA()
+    for i in range(10):
+        distance.append(sa.run_SA())
+    print(distance)
     print("lcf obj:" + str(lcf.getTotalDistance(lcf_path)))
 
 
