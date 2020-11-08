@@ -13,5 +13,5 @@ positions = []
 for i in range(50):#随机数个数
     a = round(random.uniform(121.559946, 121.565753),6)#随机数范围
     b = round(random.uniform(29.797355,29.802640),6)
-    positions.append([a,b])
+    positions.append([b,a])
 

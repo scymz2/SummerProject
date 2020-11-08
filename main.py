@@ -18,12 +18,13 @@
 import math
 import random
 import datetime
+import copy
 import numpy as np
 
-EARTH_REDIUS = 6378.137
+EARTH_REDIUS = 6378137
 pi = 3.1415926
 START_POINT = [29.801243, 121.562457]
-STATIONS = [[121.563133, 29.801135], [121.563446, 29.800235], [121.562406, 29.800769], [121.562487, 29.802068], [121.565542, 29.799381], [121.564544, 29.80015], [121.563245, 29.802247], [121.560359, 29.797815], [121.560063, 29.801755], [121.564465, 29.801953], [121.565629, 29.801579], [121.562626, 29.80148], [121.560633, 29.800737], [121.560778, 29.802348], [121.562976, 29.799546], [121.561482, 29.801447], [121.562595, 29.800359], [121.560055, 29.800619], [121.5635, 29.800615], [121.565426, 29.800958], [121.562034, 29.799665], [121.563997, 29.797673], [121.563818, 29.800899], [121.561168, 29.798036], [121.561778, 29.799277], [121.563257, 29.799673], [121.565685, 29.797894], [121.561159, 29.798208], [121.563739, 29.798694], [121.562654, 29.798647], [121.560869, 29.797938], [121.563757, 29.798085], [121.561088, 29.799304], [121.564714, 29.797868], [121.564812, 29.797863], [121.565616, 29.799832], [121.565618, 29.800552], [121.564239, 29.797562], [121.561588, 29.79799], [121.561666, 29.797982], [121.561793, 29.799544], [121.560319, 29.801015], [121.563236, 29.798758], [121.562985, 29.797851], [121.563291, 29.802266], [121.561796, 29.800882], [121.560711, 29.801141], [121.561627, 29.798323], [121.563352, 29.797461], [121.56476, 29.79738]]
+STATIONS = [[29.801135, 121.563133], [29.800235, 121.563446], [29.800769, 121.562406], [29.802068, 121.562487], [29.799381, 121.565542], [29.80015, 121.564544], [29.802247, 121.563245], [29.797815, 121.560359], [29.801755, 121.560063], [29.801953, 121.564465], [29.801579, 121.565629], [29.80148, 121.562626], [29.800737, 121.560633], [29.802348, 121.560778], [29.799546, 121.562976], [29.801447, 121.561482], [29.800359, 121.562595], [29.800619, 121.560055], [29.800615, 121.5635], [29.800958, 121.565426], [29.799665, 121.562034], [29.797673, 121.563997], [29.800899, 121.563818], [29.798036, 121.561168], [29.799277, 121.561778], [29.799673, 121.563257], [29.797894, 121.565685], [29.798208, 121.561159], [29.798694, 121.563739], [29.798647, 121.562654], [29.797938, 121.560869], [29.798085, 121.563757], [29.799304, 121.561088], [29.797868, 121.564714], [29.797863, 121.564812], [29.799832, 121.565616], [29.800552, 121.565618], [29.797562, 121.564239], [29.79799, 121.561588], [29.797982, 121.561666], [29.799544, 121.561793], [29.801015, 121.560319], [29.798758, 121.563236], [29.797851, 121.562985], [29.802266, 121.563291], [29.800882, 121.561796], [29.801141, 121.560711], [29.798323, 121.561627], [29.797461, 121.563352], [29.79738, 121.56476]]
 
 
 class LocalClosestFirst:
@@ -75,6 +76,20 @@ class LocalClosestFirst:
         self.cur = self.stations[closest]
         return shortest, closest
 
+        # 获取当前路径总长度
+    def getTotalDistance(self, path):
+        distance = 0
+        # 计算起始点到第一个基站和最后一个基站返回起始点的距离
+        start2first = getDistance(self.start, self.stations[path[0]])
+        last2end = getDistance(self.stations[path[0]], self.start)
+
+        for i in range(49):
+            dis = getDistance(self.stations[path[i]], self.stations[path[i + 1]])
+            distance += dis
+
+        distance += (start2first + last2end)
+        return distance
+
 
 class SimulatedAnnealing:
 
@@ -87,11 +102,11 @@ class SimulatedAnnealing:
         self.stations = stations
         self.lcf_path = lcf_path
         # 以_开头为私有变量,这边的参数主要为
-        self._SA_TS = 500 #起始温度
-        self._SA_TF = 1  #结束温度
-        self._SA_BETA = 0.00000001
+        self._SA_TS = 200 #起始温度
+        self._SA_TF = 7  #结束温度
+        self._SA_BETA = 0.0000001
         self._SA_MAX_ITER = 200000000
-        self._SA_MAX_TIME = 60
+        self._SA_MAX_TIME = 600
         self._SA_ITER_PER_T = 1
 
 
@@ -105,24 +120,17 @@ class SimulatedAnnealing:
 
         while (iter < self._SA_MAX_ITER) & (time_spend < self._SA_MAX_TIME) & (temperature > self._SA_TF):
             #随机取两个不同的station进行交换
-            item = get2RandomInt(0,49)
-            print("cur path1:")
-            print(cur_path)
-            print(item[0])
-            new_path = self.swap(item[0], item[1], cur_path)
-            print("new path:")
-            print(new_path)
-            print("cur path:")
-            print(cur_path)
-            print("iter: " + str(iter))
+            item = get2RandomInt(0, 49)
+            new_path = self.swapNode(item[0], item[1], cur_path)
             #计算delta,即交换前后的差值
             delta = self.getTotalDistance(cur_path) - self.getTotalDistance(new_path)
-            print("delta: " + str(delta))
-            print("math.exp(delta/temperature): " + str(math.exp(delta/temperature)))
             #模拟退火，熵值概率交换
-            if (delta > 0) | (delta < 0 & (math.exp(delta/temperature) > random.uniform(0,1))):
+            if (delta > 0) | ((delta < 0) & (math.exp(delta/temperature) > random.uniform(0, 1))):
                 cur_path = new_path
                 if(iter%100 ==0):
+                    print("iter: " + str(iter))
+                    print("delta: " + str(delta))
+                    print("math.exp(delta/temperature): " + str(math.exp(delta / temperature)))
                     print("temperature: " + str(temperature) + "best obj: " + str(self.getTotalDistance(cur_path)))
 
             temperature = temperature/(1+self._SA_BETA*temperature)
@@ -131,10 +139,12 @@ class SimulatedAnnealing:
             iter += 1
 
     #交换节点
-    def swap(self,item1, item2, path):
+    def swapNode(self, item1, item2, path):
+        #传进来的参数是异名同地址变量，所以需要copy一份
+        new_path = copy.deepcopy(path)
         # 黑科技，一次赋值两个变量
-        path[item1], path[item2] = path[item2], path[item1]
-        return path
+        new_path[item1], new_path[item2] = new_path[item2], new_path[item1]
+        return new_path
 
 
 
@@ -192,6 +202,7 @@ if __name__ == "__main__":
     #print(lcf_path)
     sa = SimulatedAnnealing(START_POINT, STATIONS, lcf_path)
     sa.run_SA()
+    print("lcf obj:" + str(lcf.getTotalDistance(lcf_path)))
 
 
 
