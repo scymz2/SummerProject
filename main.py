@@ -30,14 +30,26 @@ import numpy as np
 EARTH_REDIUS = 6378137
 pi = 3.1415926
 VELOCITY = 10 # m/s
-TIME_FOR_BATTERY_CHANEG = 300 # s
-BATTERY_CONSUME = 0.67
+TIME_FOR_BATTERY_CHANGE = 300 # s
+BATTERY_CONSUME = 0.067
 START_POINT = [29.801243, 121.562457]
-STATIONS = [[29.801135, 121.563133], [29.800235, 121.563446], [29.800769, 121.562406], [29.802068, 121.562487], [29.799381, 121.565542], [29.80015, 121.564544], [29.802247, 121.563245], [29.797815, 121.560359], [29.801755, 121.560063], [29.801953, 121.564465], [29.801579, 121.565629], [29.80148, 121.562626], [29.800737, 121.560633], [29.802348, 121.560778], [29.799546, 121.562976], [29.801447, 121.561482], [29.800359, 121.562595], [29.800619, 121.560055], [29.800615, 121.5635], [29.800958, 121.565426], [29.799665, 121.562034], [29.797673, 121.563997], [29.800899, 121.563818], [29.798036, 121.561168], [29.799277, 121.561778], [29.799673, 121.563257], [29.797894, 121.565685], [29.798208, 121.561159], [29.798694, 121.563739], [29.798647, 121.562654], [29.797938, 121.560869], [29.798085, 121.563757], [29.799304, 121.561088], [29.797868, 121.564714], [29.797863, 121.564812], [29.799832, 121.565616], [29.800552, 121.565618], [29.797562, 121.564239], [29.79799, 121.561588], [29.797982, 121.561666], [29.799544, 121.561793], [29.801015, 121.560319], [29.798758, 121.563236], [29.797851, 121.562985], [29.802266, 121.563291], [29.800882, 121.561796], [29.801141, 121.560711], [29.798323, 121.561627], [29.797461, 121.563352], [29.79738, 121.56476]]
+STATIONS = [[29.801135, 121.563133], [29.800235, 121.563446], [29.800769, 121.562406], [29.802068, 121.562487],
+            [29.799767, 121.565542], [29.80015, 121.564544], [29.802247, 121.563245], [29.797815, 121.560359],
+            [29.801755, 121.560063], [29.801953, 121.564465], [29.801579, 121.565629], [29.80148, 121.562626],
+            [29.800737, 121.560633], [29.802348, 121.560778], [29.799546, 121.562976], [29.801447, 121.561482],
+            [29.800359, 121.562595], [29.800619, 121.560055], [29.800615, 121.5635], [29.800958, 121.565426],
+            [29.799665, 121.562034], [29.797673, 121.563997], [29.800899, 121.563818], [29.798036, 121.561168],
+            [29.799277, 121.561778], [29.799673, 121.563257], [29.797894, 121.565685], [29.798208, 121.561159],
+            [29.798694, 121.563739], [29.798647, 121.562654], [29.797938, 121.560869], [29.798085, 121.563757],
+            [29.799304, 121.561088], [29.797868, 121.564714], [29.797863, 121.564812], [29.799832, 121.565616],
+            [29.800552, 121.565618], [29.797562, 121.564239], [29.79799, 121.561588], [29.797982, 121.561666],
+            [29.799544, 121.561793], [29.801015, 121.560319], [29.798758, 121.563236], [29.797851, 121.562985],
+            [29.802266, 121.563291], [29.800882, 121.561796], [29.801141, 121.560711], [29.798323, 121.561627],
+            [29.797461, 121.563352], [29.79738, 121.56476]]
 
 
 class LocalClosestFirst:
-    def __init__(self,start,stations):
+    def __init__(self, start, stations):
         """
         :param start: 起始点
         :param stations: 基站坐标
@@ -48,6 +60,7 @@ class LocalClosestFirst:
         self.stations = stations
         self.cur = start
         self.visited = np.zeros((len(stations),), dtype=int)
+
         #电池变量
         self.Battery_level = 100
         self.Battery_low = 20
@@ -57,6 +70,7 @@ class LocalClosestFirst:
     def LCF(self):
         """
         lcf核心算法，从起始点开始找最近点,找到当前最近点就标记一下，然后找下一个，直到没有了就回到起点
+        我们假设无人机的最低安全电量支持它从范围内的任意一点飞回出发点
         """
         path = []
         total_time = 0
@@ -65,30 +79,32 @@ class LocalClosestFirst:
         # print(self.stations)
 
         for i in range(len(self.stations)):
-            shortest, closest = self._lcf(self.cur)    #找到
-            segment_time = shortest/VELOCITY           #计算片段时间
-            predict_battery = self.Battery_level - (segment_time * BATTERY_CONSUME) #计算估计剩余消耗电量
-            #如果电量即将跌出安全范围就立即返回
+            shortest, closest = self._lcf(self.cur)      # 找到
+            segment_time = shortest / VELOCITY           # 计算片段时间
+            predict_battery = self.Battery_level - (segment_time * BATTERY_CONSUME)  # 计算估计剩余消耗电量
+            # 如果电量即将跌出安全范围就立即返回
             if(predict_battery <= self.Battery_low):
-                #记录返回以及前往下一个点的所需时间
+                # 记录返回以及前往下一个点的所需时间
                 time_back = getDistance(self.start, self.cur) / VELOCITY
-                time_next = getDistance(self.start, self.stations[closest])
-                total_time += (time_back + time_next + TIME_FOR_BATTERY_CHANEG)
+                time_next = getDistance(self.start, self.stations[closest]) / VELOCITY
+                total_time += (time_back + time_next + TIME_FOR_BATTERY_CHANGE)
                 #充电
                 self.Battery_level = 100
             else:
-                #记录前往下一个点的所需时间
+                # 记录前往下一个点的所需时间
                 total_time += segment_time
                 self.Battery_level = predict_battery
 
-            #标记经过点
+            # 标记经过点
             self.visited[closest] = 1
             self.cur = self.stations[closest]
 
-            path.append(closest)        #将新找到的点加入path中
+            path.append(closest)    # 将新找到的点加入path中
 
         # print(path)
-        return total_time
+        # 加入返回起始点的时间
+        total_time += (getDistance(self.start, self.stations[closest]) / VELOCITY)
+        return path, total_time
 
     def _lcf(self, cur):
         """
@@ -109,24 +125,29 @@ class LocalClosestFirst:
 
 class SimulatedAnnealing:
 
-    #构造方法
+    # 构造方法
     def __init__(self, start, stations, lcf_path):
         assert len(start) > 1, "没有设定起始点"
         assert len(stations) > 1, "基站数量太少"
 
         self.start = start
+        self.cur = start
         self.stations = stations
         self.lcf_path = lcf_path
         # 以_开头为私有变量,这边的参数主要为
-        self._SA_TS = 200 #起始温度
-        self._SA_TF = 7  #结束温度
+        self._SA_TS = 200   # 起始温度
+        self._SA_TF = 1     # 结束温度
         self._SA_BETA = 0.0000001
         self._SA_MAX_ITER = 200000000
         self._SA_MAX_TIME = 600
         self._SA_ITER_PER_T = 1
+        # 电池变量
+        self.Battery_level = 100
+        self.Battery_low = 20
+        self.Flight_time = 0
 
 
-    #SA主函数
+    # SA主函数
     def run_SA(self):
         iter = 0
         time_spend = 0
@@ -135,50 +156,67 @@ class SimulatedAnnealing:
         curr_time1 = datetime.datetime.now()
 
         while (iter < self._SA_MAX_ITER) & (time_spend < self._SA_MAX_TIME) & (temperature > self._SA_TF):
-            #随机取两个不同的station进行交换
+            # 随机取两个不同的station进行交换
             item = get2RandomInt(0, 49)
             new_path = self.swapNode(item[0], item[1], cur_path)
-            #计算delta,即交换前后的差值
-            delta = self.getTotalDistance(cur_path) - self.getTotalDistance(new_path)
-            #模拟退火，熵值概率交换
+            """
+            这边我们需要做的变化是
+            1.将delta的值从路程编程时间
+            """
+            # 计算delta,即交换前后的差值
+            delta = self.getTotalTime(cur_path) - self.getTotalTime(new_path)
+            # 模拟退火，熵值概率交换
             if (delta > 0) | ((delta < 0) & (math.exp(delta/temperature) > random.uniform(0, 1))):
                 cur_path = new_path
-                if(iter%100 ==0):
+                if(iter % 100 ==0):
                     print("iter: " + str(iter))
                     print("delta: " + str(delta))
                     print("math.exp(delta/temperature): " + str(math.exp(delta / temperature)))
-                    print("temperature: " + str(temperature) + "best obj: " + str(self.getTotalDistance(cur_path)))
+                    print("temperature: " + str(temperature) + " best obj: " + str(self.getTotalTime(cur_path)))
 
-            temperature = temperature/(1+self._SA_BETA*temperature)
+            temperature = temperature/(1 + self._SA_BETA*temperature)
             curr_time2 = datetime.datetime.now()
             time_spend = (curr_time2-curr_time1).seconds
             iter += 1
 
-        return self.getTotalDistance(cur_path)
+        return self.getTotalTime(cur_path)
 
-    #交换节点
+    # 交换节点
     def swapNode(self, item1, item2, path):
-        #传进来的参数是异名同地址变量，所以需要copy一份
+        # 传进来的参数是异名同地址变量，所以需要copy一份
         new_path = copy.deepcopy(path)
         # 黑科技，一次赋值两个变量
         new_path[item1], new_path[item2] = new_path[item2], new_path[item1]
         return new_path
 
 
+    # 这个函数用来计算整段路径需要花的总时间
+    def getTotalTime(self, path):
 
-    #获取当前路径总长度
-    def getTotalDistance(self, path):
-        distance = 0
-        #计算起始点到第一个基站和最后一个基站返回起始点的距离
-        start2first = getDistance(self.start, self.stations[path[0]])
-        last2end = getDistance(self.stations[path[0]], self.start)
+        total_time = 0
+        self.Battery_level = 100
 
-        for i in range(49):
-            dis = getDistance(self.stations[path[i]], self.stations[path[i+1]])
-            distance += dis
+        for i in range(len(self.stations)):
+            next_index = path[i]
+            segment_time = getDistance(self.cur, self.stations[next_index]) / VELOCITY
+            predict_battery = self.Battery_level - (segment_time * BATTERY_CONSUME)
+            #如果电量在到达下一个点之后跌出安全范围就返回充电一次
+            if(predict_battery <= self.Battery_low):
+                time_back = getDistance(self.start, self.cur) / VELOCITY
+                time_next = getDistance(self.stations[next_index],self.start) / VELOCITY
+                total_time += (time_back + time_next + TIME_FOR_BATTERY_CHANGE)
+                self.Battery_level = 100 #充电
+            else:
+                #不然就飞到下一个点
+                total_time += segment_time
+                self.Battery_level = predict_battery
+                self.cur = self.stations[next_index]
+        #加入返回起始点的时间
+        total_time += (getDistance(self.start,self.stations[next_index]) / VELOCITY)
+        return total_time
 
-        distance += (start2first + last2end)
-        return distance
+
+
 
 """
 这些是散装函数，大家共享
@@ -212,21 +250,37 @@ def get2RandomInt(bottom,top):
             s.append(x)
     return s
 
+# 获取当前路径总长度
+def getTotalDistance(self, path):
+    distance = 0
+    # 计算起始点到第一个基站和最后一个基站返回起始点的距离
+    start2first = getDistance(self.start, self.stations[path[0]])
+    last2end = getDistance(self.stations[path[0]], self.start)
+
+    for i in range(49):
+        dis = getDistance(self.stations[path[i]], self.stations[path[i+1]])
+        distance += dis
+
+    distance += (start2first + last2end)
+    return distance
+
 
 if __name__ == "__main__":
 
-    distance = []
+    time = []
 
     lcf = LocalClosestFirst(START_POINT, STATIONS)
-    lcf_path = lcf.LCF()
+    lcf_path, total_time = lcf.LCF()
+    print(total_time)
 
     #print(lcf_path)
 
+
     sa = SimulatedAnnealing(START_POINT, STATIONS, lcf_path)
-    for i in range(10):
-        distance.append(sa.run_SA())
-    print(distance)
-    print("lcf obj:" + str(lcf.getTotalDistance(lcf_path)))
+    print(sa.getTotalTime(lcf_path))
+    for i in range(1):
+        time.append(sa.run_SA())
+    print(time)
 
 
 
