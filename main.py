@@ -199,7 +199,7 @@ class SimulatedAnnealing:
             item = get2RandomInt(0, 49)
             new_path = self.swapNode(item[0], item[1], cur_path)
             # 计算delta,即交换前后的差值
-            delta = (self.getTotalTime(cur_path) - self.getTotalTime(new_path)) * 10 #delta*10有助于收敛，不然太不稳定
+            delta = (self.getTotalTime(cur_path) - self.getTotalTime(new_path)) * 5 #delta*10有助于收敛，不然太不稳定
             # 模拟退火，熵值概率交换
             if (delta > 0) | ((delta < 0) & (math.exp(delta / temperature) > random.uniform(0, 1))):
                 cur_path = new_path
