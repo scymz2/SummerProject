@@ -13,11 +13,9 @@
 # @Weather: sunny
 # @Topic: This is a personal study file of foliumTest
 import math
-
 import folium
 import webbrowser
 
-print(folium.__version__)
 START_POINT = [[29.801243, 121.562457], [29.800321, 121.566534], [29.798571, 121.559967]]
 STATIONS = [[29.801379, 121.563115], [29.800436, 121.563456], [29.800996, 121.562324],
             [29.802357, 121.562412], [29.799543, 121.565736], [29.800348, 121.56465],
@@ -39,12 +37,14 @@ STATIONS = [[29.801379, 121.563115], [29.800436, 121.563456], [29.800996, 121.56
 
 
 #define the national map
-campus_map = folium.Map(location = [29.801243,121.562457], zomm_start=4)
+campus_map = folium.Map(location = [29.801243,121.562457], zoom_start=12, tiles = 'http://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}',
+                        attr = 'default')
 
-folium.Marker([START_POINT[0][0]+0.0025,START_POINT[0][1]-0.0042],icon=folium.Icon(color='red')).add_to(campus_map)
+folium.Marker([START_POINT[0][0],START_POINT[0][1]],icon=folium.Icon(color='red')).add_to(campus_map)
+
 
 for pos in STATIONS:
-    folium.Marker([pos[0]+0.0025,pos[1]-0.0042]).add_to(campus_map)
+    folium.Marker([pos[0],pos[1]]).add_to(campus_map)
 
 campus_map.save('map.html')
 webbrowser.open('map.html')
