@@ -6,34 +6,34 @@
 @time:2020/11/06
 
 任务简介
-由于anylogic里面添加函数实在是太麻烦了，所以我人工将预设点坐标以及各种数据转出在这个程序里面计算
-我需要什么
-1.一个可以计算GPS坐标系距离的函数
-2.一个SA算法
-3.一个closest first算法
-4. 现在因为RL做不出来，所以我想了另一个办法，将电池电量因素考虑进来，比如多少距离耗费多少电量，当
-无人机到达一个新节点的时候就判断无人机的电量是否到达了预设危险值，是否还支持到下一个站点，或者需要立即返回来更换电池
-需要的参数：
-    电池百分比 battery level: 100%
-    电池消耗效率：battery consume level: 0.1
-    (可选)悬停电池消耗效率：
-5.最后我们以时间来衡量效率
-    影响时间的因素： 更换电池的时间，每个站点收集数据的停留时间，飞回起点以及起点飞下一个点的所需时间，其余飞行时间用路程/飞机速度计算
+现在主要的代码基本都已经搞定了，现在我们要导出一系列数据来证明我们的paper
+1.写出pure lcf and pure sa,即完全不考虑电量的飞行任务
+2.添加一个其他指标及飞行过程钟消耗的总电量，这个可以更具飞行的距离来算
+3.设计三个场景，基站的数量分别是16， 64 ，256
+4.固定所有基站的位置，改变初始点的位置并研究出发点对于结果的影响
+5.每个场景的SA测试100遍，并对几种算法进行比较
 """
-
 import math
 import random
 import datetime
 import copy
+
 import numpy as np
 import matplotlib.pyplot as plt
+#地图范围
+NUM = [16, 64, 256]
+RANGE_LAT1 = 29.796666
+RANGE_LAT2 = 29.803030
+RANGE_LNG1 = 121.559098
+RANGE_LNG2 = 121.566029
 
+NUM_OF_STATIONS = 50
 EARTH_REDIUS = 6378137
 pi = 3.1415926
 VELOCITY = 10  # m/s
 # TIME_FOR_BATTERY_CHANGE = 300 # s
 BATTERY_CONSUME = 0.67  # 0.067是标准25分钟电量，但是由于学校范围太小，单次任务基本不会耗干净电量，所以我们这里把耗速度加速10倍
-START_POINT = [[29.801243, 121.562457], [29.800321, 121.566534], [29.798571, 121.559967]]
+START_POINT = [[29.801243, 121.562457], [29.800321, 121.566534], [29.798571, 121.559967], [29.800870, 121.564141], [29.803430, 121.561791],[29.801010, 121.560676],[29.798677, 121.563201],[29.796219, 121.563029],[29.799254, 121.565529],[29.799292, 121.563437]]
 STATIONS = [[29.801379, 121.563115], [29.800436, 121.563456], [29.800996, 121.562324],
             [29.802357, 121.562412], [29.799543, 121.565736], [29.800348, 121.56465],
             [29.802544, 121.563236], [29.797902, 121.560096], [29.802029, 121.559775],
@@ -74,11 +74,23 @@ class LocalClosestFirst:
         # 电池变量
         self.Battery_level = 100
         self.Battery_low = 20
-        self.Flight_time = 0
 
         # path及总时间
         self.path = []
         self.total_time = 0
+
+    def pure_LCF(self):
+        """
+        这个是完完全全的LCF,不需要考虑电量因素，但是需要记录总共消耗的电量和消耗的总时间
+        """
+        for i in range(len(self.stations)):
+            shortest, closest = self._lcf(self.cur) # 就近原则
+            self.total_time += shortest / VELOCITY  # 记录时间
+            self.cur = self.stations[closest]
+            self.visited[closest] = 1  # 标记
+
+        return self.total_time
+
 
     def LCF(self):
         """
@@ -183,6 +195,47 @@ class SimulatedAnnealing:
         self.Battery_low = 20
         self.Flight_time = 0
 
+    # pure SA
+    def run_pure_SA(self):
+        iter = 0
+        time_spend = 0
+        temperature = self._SA_TS
+        cur_path = self.lcf_path
+        best_time = 9999999
+        curr_time1 = datetime.datetime.now()
+
+        print("pure SA start!")
+
+        while (iter < self._SA_MAX_ITER) & (time_spend < self._SA_MAX_TIME) & (temperature > self._SA_TF):
+            # 随机取两个不同的station进行交换
+            item = get2RandomInt(0, NUM_OF_STATIONS-1)
+            new_path = self.swapNode(item[0], item[1], cur_path)
+            #计算path的总距离(不回初始点)
+            cur_time = self.getPathDistance(cur_path) / VELOCITY
+            new_time = self.getPathDistance(new_path) / VELOCITY
+            # 计算delta,交换前后的差值
+            delta = (cur_time - new_time) * 5  # 这边的delta有助于收敛
+            # 模拟退火
+            if (delta > 0) | ((delta < 0) & (math.exp(delta / temperature) > random.uniform(0, 1))):
+                cur_path = new_path
+            if iter % 10000 == 0:
+                print("iter: " + str(iter))
+                print("delta: " + str(delta))
+                print("math.exp(delta/temperature): " + str(math.exp(delta / temperature)))
+                print("temperature: " + str(temperature) + " best obj: " + str(best_time))
+                print("cur dis: " + str(self.getTotalTime(cur_path)))
+
+            # 记录历史最佳
+            if (self.getPathDistance(cur_path) / VELOCITY) < best_time:
+                best_time = self.getPathDistance(cur_path) / VELOCITY
+
+            temperature = temperature / (1 + self._SA_BETA * temperature)
+            curr_time2 = datetime.datetime.now()
+            time_spend = (curr_time2 - curr_time1).seconds
+            iter += 1
+
+        return best_time
+
     # SA主函数
     def run_SA(self):
         iter = 0
@@ -196,19 +249,19 @@ class SimulatedAnnealing:
 
         while (iter < self._SA_MAX_ITER) & (time_spend < self._SA_MAX_TIME) & (temperature > self._SA_TF):
             # 随机取两个不同的station进行交换
-            item = get2RandomInt(0, 49)
+            item = get2RandomInt(0, NUM_OF_STATIONS-1)
             new_path = self.swapNode(item[0], item[1], cur_path)
             # 计算delta,即交换前后的差值
-            delta = (self.getTotalTime(cur_path) - self.getTotalTime(new_path)) * 5 #delta*10有助于收敛，不然太不稳定
+            delta = (self.getTotalTime(cur_path) - self.getTotalTime(new_path)) * 5 # delta*10有助于收敛，不然太不稳定
             # 模拟退火，熵值概率交换
             if (delta > 0) | ((delta < 0) & (math.exp(delta / temperature) > random.uniform(0, 1))):
                 cur_path = new_path
-                if iter % 1000 == 0:
-                    print("iter: " + str(iter))
-                    print("delta: " + str(delta))
-                    print("math.exp(delta/temperature): " + str(math.exp(delta / temperature)))
-                    print("temperature: " + str(temperature) + " best obj: " + str(best_time))
-                    print("cur dis: " + str(self.getTotalTime(cur_path)))
+            if iter % 1000 == 0:
+                print("iter: " + str(iter))
+                print("delta: " + str(delta))
+                print("math.exp(delta/temperature): " + str(math.exp(delta / temperature)))
+                print("temperature: " + str(temperature) + " best obj: " + str(best_time))
+                print("cur dis: " + str(self.getTotalTime(cur_path)))
 
             # 记录历史最佳
             if self.getTotalTime(cur_path) <= best_time:
@@ -255,6 +308,22 @@ class SimulatedAnnealing:
         self.Flight_time += (getDistance(self.start, self.stations[next_index]) / VELOCITY)
         return self.Flight_time
 
+    def getPathDistance(self,path):
+        """
+        :param path:  path
+        :return:  the pure distance of the path, excluding the distance for recharge
+        """
+        distance = 0
+        # 先计算出发点到第一个点的距离
+        distance += getDistance(self.start, self.stations[path[0]])
+        for i in range(len(path) - 1):
+            distance += getDistance(self.stations[path[i]],self.stations[path[i+1]])
+
+        # 再计算回到出发点的距离
+        distance += getDistance(self.stations[path[len(path)-1]], self.start)
+
+        return distance
+
 
 """
 这些是散装函数，大家共享
@@ -263,7 +332,7 @@ getDistance()
 get2RandomInt()
 """
 def generateNodes(num, rangeLat1, rangeLat2,rangeLng1,rangeLng2):
-    random = np.random.RandomState(0)  # RandomState生成随机数种子
+    random = np.random.RandomState(0)  # RandomState生成随机数种子，每次随机都是一样的，因为种子确定了
     positions = []
     for i in range(num):  # 随机数个数
         a = round(random.uniform(rangeLng1, rangeLng2), 6)  # 随机数范围
@@ -307,23 +376,57 @@ def getTotalDistance(self, path):
     start2first = getDistance(self.start, self.stations[path[0]])
     last2end = getDistance(self.stations[path[0]], self.start)
 
-    for i in range(49):
+    for i in range(NUM_OF_STATIONS-1):
         dis = getDistance(self.stations[path[i]], self.stations[path[i + 1]])
         distance += dis
 
     distance += (start2first + last2end)
     return distance
 
+#打图
+def plotGragh_A(x_data, y_data,x_label, y_label, title):
+    # 设置绘图风格（不妨使用R语言中的ggplot2风格）
+    plt.style.use('ggplot')
+    # 绘制条形图
+    plt.bar(x=range(len(y_data)),  # 指定条形图x轴的刻度值
+            height=y_data,  # 指定条形图y轴的数值
+            tick_label=x_data,  # 指定条形图x轴的刻度标签
+            color='steelblue',  # 指定条形图的填充色
+            width=0.6
+            )
+
+    plt.ylabel(y_label)
+    plt.xlabel(x_label)
+    plt.title(title)
+
+    for x, y in enumerate(y_data):
+        plt.text(x, y + 0.1, '%s' % round(y, 1), ha='center')
+
+    plt.show()
+
+
 
 if __name__ == "__main__":
 
-    time = []
 
+    time = []
+    p_lcf = LocalClosestFirst(START_POINT[0], STATIONS)
     lcf = LocalClosestFirst(START_POINT[0], STATIONS)
     lcf2 = LocalClosestFirst(START_POINT[0], STATIONS)
     lcf_path, lcf_time = lcf.LCF()
     lcf2_time = lcf2.LCF_2()
+    time = p_lcf.pure_LCF()
+    print("lcf_pure: " + str(time))
+    print("lcf_bc:   " + str(lcf_time))
+    print("lcf_bfn:  " + str(lcf2_time))
 
+    sa = SimulatedAnnealing(START_POINT[0], STATIONS, lcf_path)
+    #pure_sa = SimulatedAnnealing(START_POINT[0], STATIONS, lcf_path)
+    #print("pure_sa: " + str(pure_sa.run_pure_SA()))
+    print("sa:      " + str(sa.run_SA()))
+
+
+    """
     num_list = [lcf_time, lcf2_time]
     name_list = ['lcf', 'lcf2']
     plt.bar(range(len(num_list)), num_list, fc= 'b', tick_label=name_list)
@@ -340,4 +443,64 @@ if __name__ == "__main__":
     for i in range(1):
         time.append(sa.run_SA())
     print(time)
+    
+    lcf = LocalClosestFirst(START_POINT[0], STATIONS)
+    lcf_path, lcf_time = lcf.LCF()
+    pure_sa = SimulatedAnnealing(START_POINT[0], STATIONS, lcf_path)
+    print(pure_sa.run_pure_SA())
+    """
 
+    """
+    N = 9
+
+    # 任务一:分别打出 16个点， 64个点， 256个点在三个不同起点的数值
+    lcf_16 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[0], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+    lcf_64 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[1], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+    lcf_256 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[2], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+
+    # pure lcf
+    time_16 = lcf_16.pure_LCF()
+    time_64 = lcf_64.pure_LCF()
+    time_256 = lcf_256.pure_LCF()
+
+    # 重新初始化，避免数据相互影响（这步可以通过重构代码来省略）
+    lcf_16 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[0], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+    lcf_64 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[1], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+    lcf_256 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[2], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+
+    # lcf_bc
+    path_16, time_bc_16 = lcf_16.LCF()
+    path_64, time_bc_64 = lcf_64.LCF()
+    path_256, time_bc_256 = lcf_256.LCF()
+
+    # 重新初始化，避免数据相互影响（这步可以通过重构代码来省略）
+    lcf_16 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[0], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+    lcf_64 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[1], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+    lcf_256 = LocalClosestFirst(START_POINT[N], generateNodes(NUM[2], RANGE_LAT1, RANGE_LAT2, RANGE_LNG1, RANGE_LNG2))
+
+    # lcf_bfn
+    time_bfn_16 = lcf_16.LCF_2()
+    time_bfn_64 = lcf_64.LCF_2()
+    time_bfn_256 = lcf_256.LCF_2()
+
+
+    # 打图所需数据
+    number = ('16', '64', '256')
+    height1 = [time_16, time_64, time_256]
+    height2 = [time_bc_16, time_bc_64, time_bc_256]
+    height3 = [time_bfn_16, time_bfn_64, time_bfn_256]
+
+    # 打印第一张图
+    fig = plt.figure(1)
+    plotGragh_A(number, height1, x_label="number of stations", y_label="Task Time (seconds)", title="PURE LCF S" + str(N+1))
+    fig.savefig('lcf_pure_s'+ str(N+1) + '.png', dpi=fig.dpi)
+    # 打印第二张图
+    fig = plt.figure(2)
+    plotGragh_A(number, height2, x_label="number of stations", y_label="Task Time (seconds)", title="LCF BC S" + str(N+1))
+    fig.savefig('lcf_bc_s' + str(N+1) + '.png', dpi=fig.dpi)
+    # 打印第三张图
+    fig = plt.figure(3)
+    plotGragh_A(number, height3, x_label="number of stations", y_label="Task Time (seconds)", title="LCF BFN S" + str(N+1))
+    fig.savefig('lcf_bfn_s' + str(N+1) + '.png', dpi=fig.dpi)
+
+    """
